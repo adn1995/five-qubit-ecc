@@ -102,7 +102,40 @@ def prepare_state(x: bool) -> QuantumCircuit:
         Quantum circuit that prepares the logical state |x_L>
         corresponding to the boolean `x`
     """
-    pass
+    qr = QuantumRegister(5, name="x")
+
+    qc = QuantumCircuit(qr, name="state preparation")
+
+    if x == True:
+        qc.x(4)
+
+    qc.h(0)
+    qc.s(0)
+
+    qc.cz(0,1)
+    qc.cz(0,3)
+    qc.cy(0,4)
+
+    qc.h(1)
+
+    qc.cz(1,2)
+    qc.cz(1,3)
+    qc.cx(1,4)
+
+    qc.h(2)
+
+    qc.cz(2,0)
+    qc.cz(2,1)
+    qc.cx(2,4)
+
+    qc.h(3)
+    qc.s(3)
+
+    qc.cz(3,0)
+    qc.cz(3,2)
+    qc.cy(3,4)
+
+    return qc
 
 def error_channel(p: float,
                     nqubits: int = 5,
