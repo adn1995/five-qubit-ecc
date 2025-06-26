@@ -49,7 +49,7 @@ def main_circuit(x: bool, p: float, seed: int | None = None) -> QuantumCircuit:
     # Quantum register for syndromes
     syndromes_qr = AncillaRegister(4, name="checks")
 
-    # Measure syndromes to classical register
+    # Classical register for measuring syndromes
     syndromes_cr = ClassicalRegister(4, name="s")
 
     qc = QuantumCircuit(logical_state,
@@ -183,10 +183,33 @@ def measure_syndromes() -> QuantumCircuit:
     """Returns the quantum circuit for measuring syndromes of the
     five-qubit error correcting code.
     """
+    logical_state = QuantumRegister(5, name="x")
+
+    # Quantum register for syndromes
+    syndromes_qr = AncillaRegister(4, name="checks")
+
+    # Classical register for measuring syndromes
+    syndromes_cr = ClassicalRegister(4, name="s")
+
+    qc = QuantumCircuit(logical_state,
+                        syndromes_qr,
+                        syndromes_cr,
+                        name="syndrome measurement")
+
+    # Generators for the stabilizer are
+    # XZZXI, IXZZX, XIXZZ, ZXIXZ
     pass
 
 def error_correction() -> QuantumCircuit:
     """Returns the quantum circuit that applies recovery operations
     based on the measured syndromes.
     """
+    logical_state = QuantumRegister(5, name="x")
+
+    # Classical register for measured syndromes
+    syndromes_cr = ClassicalRegister(4, name="s")
+
+    qc = QuantumCircuit(logical_state,
+                        syndromes_cr,
+                        name="recovery operations")
     pass
