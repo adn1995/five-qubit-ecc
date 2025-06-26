@@ -46,15 +46,15 @@ def main_circuit(x: bool, p: float, seed: int | None = None) -> QuantumCircuit:
     """
     logical_state = QuantumRegister(5, name="x")
 
-    # Quantum register for syndromes
-    syndromes_qr = AncillaRegister(4, name="checks")
+    # Quantum register for checking generators of the stabilizer
+    checks = AncillaRegister(4, name="checks")
 
     # Classical register for measuring syndromes
-    syndromes_cr = ClassicalRegister(4, name="s")
+    syndromes = ClassicalRegister(4, name="s")
 
     qc = QuantumCircuit(logical_state,
-                        syndromes_qr,
-                        syndromes_cr,
+                        checks,
+                        syndromes,
                         name="main circuit")
 
     # Prepare logical state
@@ -71,12 +71,12 @@ def main_circuit(x: bool, p: float, seed: int | None = None) -> QuantumCircuit:
 
     # Measure syndromes
     qc.compose(measure_syndromes().to_gate(),
-                qubits=[*logical_state, *syndromes_qr, *syndromes_cr],
+                qubits=[*logical_state, *checks, *syndromes],
                 inplace=True)
 
     # Apply recovery operations
     qc.compose(error_correction().to_gate(),
-                qubits=[*logical_state, *syndromes_cr],
+                qubits=[*logical_state, *syndromes],
                 inplace=True)
 
     return qc
@@ -185,20 +185,59 @@ def measure_syndromes() -> QuantumCircuit:
     """
     logical_state = QuantumRegister(5, name="x")
 
-    # Quantum register for syndromes
-    syndromes_qr = AncillaRegister(4, name="checks")
+    # Quantum register for checking generators of the stabilizer
+    checks = AncillaRegister(4, name="checks")
 
     # Classical register for measuring syndromes
-    syndromes_cr = ClassicalRegister(4, name="s")
+    syndromes = ClassicalRegister(4, name="s")
 
     qc = QuantumCircuit(logical_state,
-                        syndromes_qr,
-                        syndromes_cr,
+                        checks,
+                        syndromes,
                         name="syndrome measurement")
 
     # Generators for the stabilizer are
     # XZZXI, IXZZX, XIXZZ, ZXIXZ
-    pass
+
+    # Measure the stabilizer generators, as in Figure 10.13 of N&C
+
+    # XZZXI
+    qc.h(checks[0])
+    qc.cx(checks[0], logical_state[0])
+    qc.cz(checks[0], logical_state[1])
+    qc.cz(checks[0], logical_state[2])
+    qc.cx(checks[0], logical_state[3])
+    qc.h(checks[0])
+
+    # IXZZX
+    qc.h(checks[1])
+    qc.cx(checks[1], logical_state[1])
+    qc.cz(checks[1], logical_state[2])
+    qc.cz(checks[1], logical_state[3])
+    qc.cx(checks[1], logical_state[4])
+    qc.h(checks[1])
+
+    # XIXZZ
+    qc.h(checks[2])
+    qc.cx(checks[2], logical_state[0])
+    qc.cx(checks[2], logical_state[2])
+    qc.cz(checks[2], logical_state[3])
+    qc.cz(checks[2], logical_state[4])
+    qc.h(checks[2])
+
+    # ZXIXZ
+    qc.h(checks[3])
+    qc.cz(checks[3], logical_state[0])
+    qc.cx(checks[3], logical_state[1])
+    qc.cx(checks[3], logical_state[3])
+    qc.cz(checks[3], logical_state[4])
+    qc.h(checks[3])
+
+    # Measure syndromes
+    for i in range(4):
+        qc.measure(checks[i], syndromes[i])
+
+    return qc
 
 def error_correction() -> QuantumCircuit:
     """Returns the quantum circuit that applies recovery operations
@@ -207,9 +246,9 @@ def error_correction() -> QuantumCircuit:
     logical_state = QuantumRegister(5, name="x")
 
     # Classical register for measured syndromes
-    syndromes_cr = ClassicalRegister(4, name="s")
+    syndromes = ClassicalRegister(4, name="s")
 
     qc = QuantumCircuit(logical_state,
-                        syndromes_cr,
+                        syndromes,
                         name="recovery operations")
     pass
