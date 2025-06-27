@@ -52,9 +52,13 @@ def main_circuit(x: bool, p: float, seed: int | None = None) -> QuantumCircuit:
     # Classical register for measuring syndromes
     syndromes = ClassicalRegister(4, name="s")
 
+    # Classical register for measuring the logical state
+    data = ClassicalRegister(5, name="c")
+
     qc = QuantumCircuit(logical_state,
                         checks,
                         syndromes,
+                        data,
                         name="main circuit")
 
     # Prepare logical state
@@ -80,6 +84,10 @@ def main_circuit(x: bool, p: float, seed: int | None = None) -> QuantumCircuit:
                 qubits=logical_state,
                 clbits=syndromes,
                 inplace=True)
+
+    # Measure the logical state
+    for i in range(5):
+        qc.measure(logical_state[i], data[i])
 
     return qc
 
