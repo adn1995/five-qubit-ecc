@@ -71,12 +71,14 @@ def main_circuit(x: bool, p: float, seed: int | None = None) -> QuantumCircuit:
 
     # Measure syndromes
     qc.compose(measure_syndromes().to_gate(),
-                qubits=[*logical_state, *checks, *syndromes],
+                qubits=[*logical_state, *checks],
+                clbits=syndromes,
                 inplace=True)
 
     # Apply recovery operations
     qc.compose(error_correction().to_gate(),
-                qubits=[*logical_state, *syndromes],
+                qubits=logical_state,
+                clbits=syndromes,
                 inplace=True)
 
     return qc
