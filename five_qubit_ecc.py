@@ -70,13 +70,13 @@ def main_circuit(x: bool, p: float, seed: int | None = None) -> QuantumCircuit:
                 inplace=True)
 
     # Measure syndromes
-    qc.compose(measure_syndromes().to_gate(),
+    qc.compose(measure_syndromes(),
                 qubits=[*logical_state, *checks],
                 clbits=syndromes,
                 inplace=True)
 
     # Apply recovery operations
-    qc.compose(error_correction().to_gate(),
+    qc.compose(error_correction(),
                 qubits=logical_state,
                 clbits=syndromes,
                 inplace=True)
@@ -253,4 +253,38 @@ def error_correction() -> QuantumCircuit:
     qc = QuantumCircuit(logical_state,
                         syndromes,
                         name="recovery operations")
-    pass
+
+    with qc.switch(syndromes) as case:
+        # case(0) needs no recovery operation
+        with case(1):
+            qc.x(0)
+        with case(2):
+            qc.z(2)
+        with case(3):
+            qc.x(4)
+        with case(4):
+            qc.z(4)
+        with case(5):
+            qc.z(1)
+        with case(6):
+            qc.x(3)
+        with case(7):
+            qc.y(4)
+        with case(8):
+            qc.x(1)
+        with case(9):
+            qc.z(3)
+        with case(10):
+            qc.z(0)
+        with case(11):
+            qc.y(0)
+        with case(12):
+            qc.x(2)
+        with case(13):
+            qc.y(1)
+        with case(14):
+            qc.y(2)
+        with case(15):
+            qc.y(3)
+
+    return qc
