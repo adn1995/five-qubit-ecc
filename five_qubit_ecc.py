@@ -8,34 +8,13 @@ from qiskit.circuit import (QuantumCircuit,
                             QuantumRegister,
                             AncillaRegister,
                             ClassicalRegister)
-import math
-import random
+from qiskit.quantum_info import Statevector
 
-########################################################################
-########################################################################
-# Finding the probability of success
-########################################################################
-########################################################################
+# Use the following imports in the notebook for simulating
+# from qiskit_aer import AerSimulator
+# from qiskit import transpile
 
-def probability_of_success(x: bool, p: float) -> float:
-    """Returns the probability that measuring the data qubits of the
-    main circuit gives a component of the correct logical state.
-
-    Parameters
-    ----------
-    x : bool
-        Boolean that will be prepared into a logical state
-    p : float
-        Error probability for each physical qubit representing `x`
-
-    Returns
-    -------
-    float
-        Probability that measuring the data qubits of the
-        `main_circuit(x,p)` gives a component of the correct logical
-        state |x_L>
-    """
-    pass
+import numpy as np
 
 ########################################################################
 ########################################################################
@@ -43,7 +22,7 @@ def probability_of_success(x: bool, p: float) -> float:
 ########################################################################
 ########################################################################
 
-def main_circuit(x: bool, p: float) -> QuantumCircuit:
+def main_circuit(x: bool, p: float, seed: int | None = None) -> QuantumCircuit:
     """Returns a quantum circuit that implements and tests the
     five-qubit error correcting code.
 
@@ -53,6 +32,8 @@ def main_circuit(x: bool, p: float) -> QuantumCircuit:
         Boolean that will be prepared into a logical state
     p : float
         Error probability for each physical qubit representing `x`
+    seed : int | None
+        Random seed used for PRNG
 
     Returns
     -------
@@ -65,14 +46,50 @@ def main_circuit(x: bool, p: float) -> QuantumCircuit:
     """
     logical_state = QuantumRegister(5, name="x")
 
-    # Should have a classical register for controlling the error channel
-    # Randomly initialize the classical register, where each bit has
-    # probability `p` of being initialized with 1
-    controls = ClassicalRegister(15, name="x")
+    # Quantum register for checking generators of the stabilizer
+    checks = AncillaRegister(4, name="checks")
 
-    # Should have a register for syndromes
-    syndromes = AncillaRegister(4, name="s")
-    pass
+    # Classical register for measuring syndromes
+    syndromes = ClassicalRegister(4, name="s")
+
+    # Classical register for measuring the logical state
+    data = ClassicalRegister(5, name="c")
+
+    qc = QuantumCircuit(logical_state,
+                        checks,
+                        syndromes,
+                        data,
+                        name="main circuit")
+
+    # Prepare logical state
+    qc.compose(prepare_state(x).to_gate(),
+                logical_state,
+                inplace=True)
+
+    # Apply errors
+    if seed is None:
+        seed = np.random.randint(0, np.iinfo(np.int32).max)
+    qc.compose(error_channel(p, 5, seed).to_gate(),
+                logical_state,
+                inplace=True)
+
+    # Measure syndromes
+    qc.compose(measure_syndromes(),
+                qubits=[*logical_state, *checks],
+                clbits=syndromes,
+                inplace=True)
+
+    # Apply recovery operations
+    qc.compose(error_correction(),
+                qubits=logical_state,
+                clbits=syndromes,
+                inplace=True)
+
+    # Measure the logical state
+    for i in range(5):
+        qc.measure(logical_state[i], data[i])
+
+    return qc
 
 ########################################################################
 ########################################################################
@@ -95,16 +112,55 @@ def prepare_state(x: bool) -> QuantumCircuit:
         Quantum circuit that prepares the logical state |x_L>
         corresponding to the boolean `x`
     """
-    pass
+    qr = QuantumRegister(5, name="x")
 
-def error_channel(nqubits: int = 5) -> QuantumCircuit:
+    qc = QuantumCircuit(qr, name="state preparation")
+
+    if x == True:
+        qc.x(4)
+
+    qc.h(0)
+    qc.s(0)
+
+    qc.cz(0,1)
+    qc.cz(0,3)
+    qc.cy(0,4)
+
+    qc.h(1)
+
+    qc.cz(1,2)
+    qc.cz(1,3)
+    qc.cx(1,4)
+
+    qc.h(2)
+
+    qc.cz(2,0)
+    qc.cz(2,1)
+    qc.cx(2,4)
+
+    qc.h(3)
+    qc.s(3)
+
+    qc.cz(3,0)
+    qc.cz(3,2)
+    qc.cy(3,4)
+
+    return qc
+
+def error_channel(p: float,
+                    nqubits: int = 5,
+                    seed: int | None = None) -> QuantumCircuit:
     """Returns a quantum circuit implementing a random Pauli error
     channel.
 
     Parameters
     ----------
+    p : float
+        Error probability for each physical qubit
     nqubits : int
         Number of physical qubits
+    seed : int | None
+        Random seed used for PRNG
 
     Returns
     -------
@@ -113,17 +169,23 @@ def error_channel(nqubits: int = 5) -> QuantumCircuit:
     # Quantum register for physical qubits
     qr = QuantumRegister(nqubits, name="x")
 
-    # Classical register for controlling Pauli gates
-    # For each physical qubit, we should have 3 classical bits,
-    # corresponding to the 3 Pauli gates
-    cr = ClassicalRegister(3*nqubits, name="c")
+    qc = QuantumCircuit(qr, name="error channel")
 
-    qc = QuantumCircuit(qr, cr, name="error channel")
+    if seed is None:
+        seed = np.random.randint(0, np.iinfo(np.int32).max)
+    rng = np.random.default_rng(seed)
 
+    # For each physical qubit, randomly and independently apply each
+    # Pauli gate with probability p, so that each physical qubit has
+    # probability 1-3*p of having no error
     for i in range(nqubits):
-        qc.cx(cr[i],qr[i])
-        qc.cy(cr[nqubits+i], qr[i])
-        qc.cz(cr[2*nqubits+i], qr[i])
+        random_tuple = rng.random(3)
+        if random_tuple[0] < p:
+            qc.x(qr[i])
+        if random_tuple[1] < p:
+            qc.y(qr[i])
+        if random_tuple[2] < p:
+            qc.z(qr[i])
 
     return qc
 
@@ -131,10 +193,106 @@ def measure_syndromes() -> QuantumCircuit:
     """Returns the quantum circuit for measuring syndromes of the
     five-qubit error correcting code.
     """
-    pass
+    logical_state = QuantumRegister(5, name="x")
+
+    # Quantum register for checking generators of the stabilizer
+    checks = AncillaRegister(4, name="checks")
+
+    # Classical register for measuring syndromes
+    syndromes = ClassicalRegister(4, name="s")
+
+    qc = QuantumCircuit(logical_state,
+                        checks,
+                        syndromes,
+                        name="syndrome measurement")
+
+    # Generators for the stabilizer are
+    # XZZXI, IXZZX, XIXZZ, ZXIXZ
+
+    # Measure the stabilizer generators, as in Figure 10.13 of N&C
+
+    # XZZXI
+    qc.h(checks[0])
+    qc.cx(checks[0], logical_state[0])
+    qc.cz(checks[0], logical_state[1])
+    qc.cz(checks[0], logical_state[2])
+    qc.cx(checks[0], logical_state[3])
+    qc.h(checks[0])
+
+    # IXZZX
+    qc.h(checks[1])
+    qc.cx(checks[1], logical_state[1])
+    qc.cz(checks[1], logical_state[2])
+    qc.cz(checks[1], logical_state[3])
+    qc.cx(checks[1], logical_state[4])
+    qc.h(checks[1])
+
+    # XIXZZ
+    qc.h(checks[2])
+    qc.cx(checks[2], logical_state[0])
+    qc.cx(checks[2], logical_state[2])
+    qc.cz(checks[2], logical_state[3])
+    qc.cz(checks[2], logical_state[4])
+    qc.h(checks[2])
+
+    # ZXIXZ
+    qc.h(checks[3])
+    qc.cz(checks[3], logical_state[0])
+    qc.cx(checks[3], logical_state[1])
+    qc.cx(checks[3], logical_state[3])
+    qc.cz(checks[3], logical_state[4])
+    qc.h(checks[3])
+
+    # Measure syndromes
+    for i in range(4):
+        qc.measure(checks[i], syndromes[i])
+
+    return qc
 
 def error_correction() -> QuantumCircuit:
     """Returns the quantum circuit that applies recovery operations
     based on the measured syndromes.
     """
-    pass
+    logical_state = QuantumRegister(5, name="x")
+
+    # Classical register for measured syndromes
+    syndromes = ClassicalRegister(4, name="s")
+
+    qc = QuantumCircuit(logical_state,
+                        syndromes,
+                        name="recovery operations")
+
+    with qc.switch(syndromes) as case:
+        # case(0) needs no recovery operation
+        with case(1):
+            qc.x(0)
+        with case(2):
+            qc.z(2)
+        with case(3):
+            qc.x(4)
+        with case(4):
+            qc.z(4)
+        with case(5):
+            qc.z(1)
+        with case(6):
+            qc.x(3)
+        with case(7):
+            qc.y(4)
+        with case(8):
+            qc.x(1)
+        with case(9):
+            qc.z(3)
+        with case(10):
+            qc.z(0)
+        with case(11):
+            qc.y(0)
+        with case(12):
+            qc.x(2)
+        with case(13):
+            qc.y(1)
+        with case(14):
+            qc.y(2)
+        with case(15):
+            qc.y(3)
+
+    return qc
