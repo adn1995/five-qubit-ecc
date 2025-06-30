@@ -7,38 +7,42 @@ for implementing and testing the five-qubit error correcting code.
 from qiskit.circuit import (QuantumCircuit,
                             QuantumRegister,
                             AncillaRegister,
-                            ClassicalRegister,
-                            Gate)
-from qiskit_aer.noise import NoiseModel, pauli_error
+                            ClassicalRegister)
+from qiskit.quantum_info import Statevector
 
 # Use the following imports in the notebook for simulating
 # from qiskit_aer import AerSimulator
 # from qiskit import transpile
 
+import numpy as np
+
 ########################################################################
 ########################################################################
-# Five-qubit error correcting code
+# Main circuit
 ########################################################################
 ########################################################################
 
-def five_qubit_ecc(x: bool = False) -> QuantumCircuit:
-    """Returns a quantum circuit that implements the five-qubit error
-    correcting code.
+def main_circuit(x: bool, p: float, seed: int | None = None) -> QuantumCircuit:
+    """Returns a quantum circuit that implements and tests the
+    five-qubit error correcting code.
 
     Parameters
     ----------
     x : bool
         Boolean that will be prepared into a logical state
+    p : float
+        Error probability for each physical qubit representing `x`
+    seed : int | None
+        Random seed used for PRNG
 
     Returns
     -------
     QuantumCircuit
         Quantum circuit that prepares the logical state corresponding to
-        the boolean `x`, runs the state through an empty gate, measures
-        syndromes, applies recovery operations (if needed), and measures
-        the data qubits.
-        The empty gate exists for a NoiseModel to apply a random Pauli
-        error.
+        the boolean `x`, runs the state through a random Pauli error
+        channel with error rate `p` for each qubit, measures syndromes,
+        applies recovery operations (if needed), and measures the data
+        qubits.
     """
     logical_state = QuantumRegister(5, name="x")
 
@@ -62,14 +66,12 @@ def five_qubit_ecc(x: bool = False) -> QuantumCircuit:
                 logical_state,
                 inplace=True)
 
-    # Empty error channel
-    # Use barriers to prevent transpiler from messing with this gate
-    # When transpiling, make sure that "error channel" is a basis gate
-    qc.barrier(logical_state)
-    qc.compose(error_channel(5),
+    # Apply errors
+    if seed is None:
+        seed = np.random.randint(0, np.iinfo(np.int32).max)
+    qc.compose(error_channel(p, 5, seed).to_gate(),
                 logical_state,
                 inplace=True)
-    qc.barrier(logical_state)
 
     # Measure syndromes
     qc.compose(measure_syndromes(),
@@ -145,25 +147,47 @@ def prepare_state(x: bool) -> QuantumCircuit:
 
     return qc
 
-def error_channel(nqubits: int = 5) -> Gate:
-    """Returns an empty quantum gate, to which noise will be applied
-    by a NoiseModel.
+def error_channel(p: float,
+                    nqubits: int = 5,
+                    seed: int | None = None) -> QuantumCircuit:
+    """Returns a quantum circuit implementing a random Pauli error
+    channel.
 
     Parameters
     ----------
+    p : float
+        Error probability for each physical qubit
     nqubits : int
         Number of physical qubits
+    seed : int | None
+        Random seed used for PRNG
 
     Returns
     -------
-    Gate
+    QuantumCircuit
     """
     # Quantum register for physical qubits
     qr = QuantumRegister(nqubits, name="x")
 
     qc = QuantumCircuit(qr, name="error channel")
 
-    return qc.to_gate()
+    if seed is None:
+        seed = np.random.randint(0, np.iinfo(np.int32).max)
+    rng = np.random.default_rng(seed)
+
+    # For each physical qubit, randomly and independently apply each
+    # Pauli gate with probability p, so that each physical qubit has
+    # probability 1-3*p of having no error
+    for i in range(nqubits):
+        random_tuple = rng.random(3)
+        if random_tuple[0] < p:
+            qc.x(qr[i])
+        if random_tuple[1] < p:
+            qc.y(qr[i])
+        if random_tuple[2] < p:
+            qc.z(qr[i])
+
+    return qc
 
 def measure_syndromes() -> QuantumCircuit:
     """Returns the quantum circuit for measuring syndromes of the
@@ -272,34 +296,3 @@ def error_correction() -> QuantumCircuit:
             qc.y(3)
 
     return qc
-
-########################################################################
-########################################################################
-# Random Pauli error
-########################################################################
-########################################################################
-
-def random_pauli(p: float) -> NoiseModel:
-    """Returns the NoiseModel for random Pauli error on the error
-    channel.
-
-    Parameters
-    ----------
-    p : float
-        Probability that a given Pauli gate is applied to a physical
-        qubit
-
-    Returns
-    -------
-    NoiseModel
-    """
-    random_pauli_error = pauli_error([("X", p),
-                                        ("Y", p),
-                                        ("Z", p),
-                                        ("I", 1-3*p)])
-
-    noise_model = NoiseModel()
-    noise_model.add_all_qubit_quantum_error(random_pauli_error,
-                                            "error channel")
-
-    return noise_model
