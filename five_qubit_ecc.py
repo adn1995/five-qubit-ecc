@@ -8,11 +8,9 @@ from qiskit.circuit import (QuantumCircuit,
                             QuantumRegister,
                             AncillaRegister,
                             ClassicalRegister)
-from qiskit.quantum_info import Statevector
 
-# Use the following imports in the notebook for simulating
-# from qiskit_aer import AerSimulator
-# from qiskit import transpile
+from qiskit_aer import AerSimulator
+from qiskit import transpile
 
 import numpy as np
 
@@ -22,7 +20,9 @@ import numpy as np
 ########################################################################
 ########################################################################
 
-def main_circuit(x: bool, p: float, seed: int | None = None) -> QuantumCircuit:
+def main_circuit(x: bool = False,
+                    p: float = 0,
+                    seed: int | None = None) -> QuantumCircuit:
     """Returns a quantum circuit that implements and tests the
     five-qubit error correcting code.
 
@@ -296,3 +296,127 @@ def error_correction() -> QuantumCircuit:
             qc.y(3)
 
     return qc
+
+########################################################################
+########################################################################
+# Simulations
+########################################################################
+########################################################################
+
+def simulate(x: bool = False,
+                p: float = 0,
+                seed: int | None = None,
+                num_sims: int = 1000,
+                simulator: AerSimulator | None = None) -> tuple[int]:
+    """Returns the counts for correct and incorrect outputs when
+    simulating the five qubit error correcting code.
+
+    Parameters
+    ----------
+    x : bool
+        Boolean that will be prepared into a logical state
+    p : float
+        Error probability for each physical qubit representing `x`
+    seed : int | None
+        Random seed used for PRNG
+    num_sims : int
+        Number of simulations
+    simulator : AerSimulator
+        Simulator on which the simulations are run
+
+    Returns
+    -------
+    tuple[int]
+        2-tuple where the 0th component is the number of correct
+        outputs, and the 1st component is the number of incorrect
+        outputs
+    """
+    if simulator == None:
+        simulator = AerSimulator()
+    counts = dict()
+
+    for i in range(num_sims):
+        # Compiling the circuit for every iteration of the for loop is
+        # very inefficient, but is necessary because each compilation
+        # randomizes the Pauli error channel.
+        #
+        # I had previously tried to use NoiseModel to model the random
+        # Pauli error so that I could compile the circuit once and run
+        # the simulation with shots=num_sims, but I couldn't figure out
+        # how to get the NoiseModel to apply the error to the transpiled
+        # circuit; I tried to get the NoiseModel to apply a random Pauli
+        # error to every qubit of an empty gate with
+        #   name="error channel"
+        # but, to my understanding, the transpiler would simplify out
+        # the `error-channel()`, so when it was time for the NoiseModel
+        # to apply errors, there was no "error channel" gate on which to
+        # apply errors, so no errors were applied.
+        #
+        # I'm still not sure how to get around those issues, so...
+        # here we are.
+        compiled_circuit = transpile(main_circuit(x, p, seed), simulator)
+        job = simulator.run(compiled_circuit, shots=1)
+        new_count = job.result().get_counts()
+        for key in new_count:
+            if key in counts:
+                new_val = counts.get(key) + new_count.get(key)
+                counts.update({key: new_val})
+            else:
+                counts.update({key: new_count.get(key)})
+
+    # Components of logical state
+    if x == False:
+        correct_states = ("00000", "10010", "01001", "10100",
+                            "01010", "11011", "00110", "11000",
+                            "11101", "00011", "11110", "01111",
+                            "10001", "01100", "10111", "00101")
+    else:
+        correct_states = ("11111", "01101", "10110", "01011",
+                            "10101", "00100", "11001", "00111",
+                            "00010", "11100", "00001", "10000",
+                            "01110", "10011", "01000", "11010")
+
+    correct_count = 0
+    incorrect_count = 0
+
+    for key in counts:
+        if key[0:5] in correct_states:
+            correct_count += counts.get(key)
+        else:
+            incorrect_count += counts.get(key)
+
+    return (correct_count, incorrect_count)
+
+def simulation_results(x: bool = False,
+                probs: list[float] = [0.01, 0.05, 0.1],
+                seed: int | None = None,
+                num_sims: int = 1000,
+                simulator: AerSimulator | None = None) -> dict[float, float]:
+    """Returns dictionary of simulation results.
+
+    Parameters
+    ----------
+    x : bool
+        Boolean that will be prepared into a logical state
+    probs : list[float]
+        List of error probabilities
+    seed : int | None
+        Random seed used for PRNG
+    num_sims : int
+        Number of simulations
+    simulator : AerSimulator
+        Simulator on which the simulations are run
+
+    Returns
+    -------
+    dict[float, float]
+        The set of keys of this dictionary is `probs`, and the value for
+        a given key is the simulated probability of a correct output.
+    """
+    results = dict()
+    for p in probs:
+        correct_count = simulate(x, p, seed, num_sims, simulator)[0]
+        result = correct_count/num_sims
+        results.update({p: result})
+
+    return results
